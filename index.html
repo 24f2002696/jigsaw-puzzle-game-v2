@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Jigsaw Puzzle</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Basic Styles */
+        body { font-family: sans-serif; }
+        #puzzleContainer { position: relative; width: 600px; height: 600px; margin: 20px auto; border: 1px solid #ccc; }
+        .puzzlePiece { position: absolute; width: 100px; height: 100px; border: 1px solid #eee; box-sizing: border-box; cursor: grab; }
+        .puzzlePiece.correct { border: 2px solid green; }
+        #imagePreview { position: absolute; top: 10px; right: 10px; width: 100px; border: 1px solid #ccc; }
+        #victoryScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); display: none; justify-content: center; align-items: center; color: white; font-size: 2em; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.8); display: none; z-index: 10; }
+        #overlay img { max-width: 80%; max-height: 80%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        #controls { text-align: center; margin-bottom: 10px; }
+        .hidden { display: none; }
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            #puzzleContainer { width: 90%; height: auto; max-width: 400px; max-height: 400px; }
+            .puzzlePiece { width: calc(100% / 3); height: calc(100% / 3); } /* Adjust for smaller screens */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1 class="text-center mt-4">Jigsaw Puzzle Game</h1>
+
+        <div id="controls" class="mb-3">
+            <input type="file" id="imageUpload" accept="image/*">
+            <select id="difficulty">
+                <option value="3">Easy (3x3)</option>
+                <option value="4">Medium (4x4)</option>
+                <option value="5">Hard (5x5)</option>
+                <option value="6">Expert (6x6)</option>
+            </select>
+            <button id="newPuzzleButton" class="btn btn-primary">New Puzzle</button>
+            <button id="resetButton" class="btn btn-secondary">Reset</button>
+            <button id="previewButton" class="btn btn-info">Preview</button>
+        </div>
+
+        <div class="row justify-content-center">
+            <div id="puzzleContainer" class="col-md-6"></div>
+        </div>
+
+        <div class="row justify-content-center mt-3">
+            <div class="col-md-6 text-center">
+                <p>Time: <span id="timer">0</span> seconds</p>
+                <p>Moves: <span id="moves">0</span></p>
+            </div>
+        </div>
+
+        <img id="imagePreview" src="" alt="Preview" class="hidden">
+
+        <div id="overlay" class="hidden">
+            <img id="fullImage" src="" alt="Full Image">
+        </div>
+
+        <div id="victoryScreen" class="hidden">
+            <h2>Congratulations!</h2>
+            <p>Time: <span id="finalTime"></span> seconds</p>
+            <p>Moves: <span id="finalMoves"></span></p>
+        </div>
+    </div>
+
+    <script>
+        // Get DOM elements
+        const imageUpload = document.getElementById('imageUpload');
+        const puzzleContainer = document.getElementById('puzzleContainer');
+        const difficultySelect = document.getElementById('difficulty');
+        const resetButton = document.getElementById('resetButton');
+        const previewButton = document.getElementById('previewButton');
+        const overlay = document.getElementById('overlay');
+        const fullImage = document.getElementById('fullImage');
+        const imagePreview = document.getElementById('imagePreview');
+        const timerDisplay = document.getElementById('timer');
+        const movesDisplay = document.getElementById('moves');
+        const victoryScreen = document.getElementById('victoryScreen');
+        const finalTimeDisplay = document.getElementById('finalTime');
+        const finalMovesDisplay = document.getElementById('finalMoves');
+        const newPuzzleButton = document.getElementById('newPuzzleButton');
+
+        // Game variables
+        let imageURL = '';
+        let pieces = [];
+        let gridSize = 3;
+        let pieceSize = 100;
+        let timerInterval;
+        let seconds = 0;
+        let moves = 0;
+        let isSolved = false;
+
+        // Timer function
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                seconds++;
+                timerDisplay.textContent = seconds;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+
+        // Move counter function
+        function incrementMoves() {
+            moves++;
+            movesDisplay.textContent = moves;
+        }
+
+        // Image upload handler
+        imageUpload.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imageURL = e.target.result;
+                    imagePreview.src = imageURL;
+                    imagePreview.classList.remove('hidden');
+                    fullImage.src = imageURL;
+                    createNewPuzzle();
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Difficulty change handler
+        difficultySelect.addEventListener('change', function() {
+            gridSize = parseInt(this.value);
+            if (imageURL) {
+                createNewPuzzle();
+            }
+        });
+
+        // Reset button handler
+        resetButton.addEventListener('click', function() {
+            resetPuzzle();
+        });
+
+        // New puzzle button handler
+        newPuzzleButton.addEventListener('click', function() {
+            // Clear the puzzle container
+            puzzleContainer.innerHTML = "";
+            // Clear timer and moves
+            stopTimer();
+            seconds = 0;
+            moves = 0;
+            timerDisplay.textContent = '0';
+            movesDisplay.textContent = '0';
+            isSolved = false;
+            // Reset image preview
+            imagePreview.src = "";
+            imagePreview.classList.add('hidden');
+
+            // Reset the image upload field
+            imageUpload.value = "";
+
+            // Hide victory screen
+            victoryScreen.classList.add('hidden');
+        });
+
+        // Preview button handler
+        previewButton.addEventListener('click', function() {
+            overlay.style.display = 'block';
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 3000); // Show for 3 seconds
+        });
+
+        // Create puzzle function
+        function createNewPuzzle() {
+            // Clear the puzzle container
+            puzzleContainer.innerHTML = '';
+
+            // Reset timer and moves
+            stopTimer();
+            seconds = 0;
+            moves = 0;
+            timerDisplay.textContent = '0';
+            movesDisplay.textContent = '0';
+            isSolved = false;
+            victoryScreen.classList.add('hidden');
+
+            // Calculate piece size based on container size and grid size
+            pieceSize = puzzleContainer.offsetWidth / gridSize;
+
+            // Create pieces
+            pieces = [];
+            for (let i = 0; i < gridSize; i++) {
+                for (let j = 0; j < gridSize; j++) {
+                    const piece = document.createElement('div');
+                    piece.classList.add('puzzlePiece');
+                    piece.style.width = `${pieceSize}px`;
+                    piece.style.height = `${pieceSize}px`;
+                    piece.style.backgroundImage = `url(${imageURL})`;
+                    piece.style.backgroundSize = `${puzzleContainer.offsetWidth}px ${puzzleContainer.offsetHeight}px`;
+                    piece.style.backgroundPosition = `-${j * pieceSize}px -${i * pieceSize}px`;
+                    piece.dataset.row = i;
+                    piece.dataset.col = j;
+                    piece.dataset.originalX = j * pieceSize;
+                    piece.dataset.originalY = i * pieceSize;
+                    piece.style.top = `${i * pieceSize}px`;
+                    piece.style.left = `${j * pieceSize}px`;
+                    piece.draggable = true;
+                    puzzleContainer.appendChild(piece);
+                    pieces.push(piece);
+                }
+            }
+
+            // Shuffle pieces
+            shufflePieces();
+
+            // Add drag and drop listeners
+            addDragAndDropListeners();
+
+            // Start timer
+            startTimer();
+        }
+
+        // Shuffle pieces function
+        function shufflePieces() {
+            for (let i = pieces.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pieces[i].style.top, pieces[j].style.top] = [pieces[j].style.top, pieces[i].style.top];
+                [pieces[i].style.left, pieces[j].style.left] = [pieces[j].style.left, pieces[i].style.left];
+            }
+        }
+
+        // Reset puzzle function
+        function resetPuzzle() {
+            pieces.forEach(piece => {
+                piece.style.top = `${piece.dataset.originalY}px`;
+                piece.style.left = `${piece.dataset.originalX}px`;
+                piece.classList.remove('correct');
+            });
+            shufflePieces();
+            moves = 0;
+            movesDisplay.textContent = '0';
+            seconds = 0;
+            timerDisplay.textContent = '0';
+            stopTimer();
+            startTimer();
+            isSolved = false;
+            victoryScreen.classList.add('hidden');
+
+        }
+
+        // Drag and drop functions
+        function addDragAndDropListeners() {
+            pieces.forEach(piece => {
+                piece.addEventListener('dragstart', dragStart);
+                piece.addEventListener('dragover', dragOver);
+                piece.addEventListener('drop', drop);
+            });
+        }
+
+        let draggedPiece = null;
+
+        function dragStart(event) {
+            draggedPiece = event.target;
+            event.dataTransfer.setData('text', ''); // Required for Firefox
+        }
+
+        function dragOver(event) {
+            event.preventDefault();
+        }
+
+        function drop(event) {
+            event.preventDefault();
+            const droppingTarget = event.target;
+
+            // Only swap positions if dropping onto another piece
+            if (droppingTarget.classList.contains('puzzlePiece')) {
+                // Swap positions
+                const tempTop = draggedPiece.style.top;
+                const tempLeft = draggedPiece.style.left;
+
+                draggedPiece.style.top = droppingTarget.style.top;
+                draggedPiece.style.left = droppingTarget.style.left;
+
+                droppingTarget.style.top = tempTop;
+                droppingTarget.style.left = tempLeft;
+
+                incrementMoves();
+                checkIfSolved();
+            }
+
+        }
+
+        // Check if solved function
+        function checkIfSolved() {
+            let solved = true;
+            pieces.forEach(piece => {
+                const row = parseInt(piece.dataset.row);
+                const col = parseInt(piece.dataset.col);
+                const top = parseInt(piece.style.top);
+                const left = parseInt(piece.style.left);
+
+                const correctTop = parseInt(piece.dataset.originalY);
+                const correctLeft = parseInt(piece.dataset.originalX);
+
+                // Snap to position and highlight if close enough
+                if (Math.abs(top - correctTop) < 10 && Math.abs(left - correctLeft) < 10) {
+                    piece.style.top = `${correctTop}px`;
+                    piece.style.left = `${correctLeft}px`;
+                    piece.classList.add('correct');
+                } else {
+                    piece.classList.remove('correct');
+                    solved = false; // Puzzle is not solved if any piece is incorrect
+                }
+
+            });
+
+             // Ensure ALL pieces are in the correct spot
+            if (solved) {
+                stopTimer();
+                isSolved = true;
+                finalTimeDisplay.textContent = seconds;
+                finalMovesDisplay.textContent = moves;
+                victoryScreen.classList.remove('hidden');
+            }
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
